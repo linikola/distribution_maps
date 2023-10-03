@@ -1,0 +1,78 @@
+library(shiny)
+library(mapview)
+library(rgdal)
+library(sp)
+library(vroom)
+library(readr)
+library(lattice)
+library(leafpop)
+library(viridis)
+library(sf)
+library(RColorBrewer)
+library(leaflet)
+
+gminy <- readOGR("gminy","gminy")
+
+# write.csv(data.frame(a = 1:10, b = letters[1:10]), 'test.csv')
+
+jet.colors <- colorRampPalette(c("#FFFDE7","#FFF9C4","#FFEE58","#F57F17"))
+
+ui <- fluidPage(
+  titlePanel("The visualization of Poland's agriculture map"),
+  sidebarLayout(
+    sidebarPanel(
+      fileInput('file1', 'Choose CSV File',
+                accept=c('text/csv',
+                         'text/comma-separated-values,text/plain',
+                         '.csv')), width = 3
+    ),
+    mainPanel(
+      tabsetPanel(
+        type = "tabs",
+        tabPanel("Data",
+                 tableOutput('contents')
+        ),
+        tabPanel("Map",
+                 leafletOutput("mapplot")),
+        hr(),
+        br(),
+        p("Welcome to the agriculture visualization app!")
+      )
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  myData <- reactive({
+    inFile <- input$file1
+    if (is.null(inFile)) return(NULL)
+    data <- read.csv(inFile$datapath, header = TRUE)
+    
+    print(head(data))
+    
+    data
+  })
+  
+  Product <- reactive({
+    data <- myData()
+    merged_data <- sp::merge(gminy, data, by.x = "JPT_NAZWA_", by.y = "Gmina", duplicateGeoms = TRUE)
+    row.names(merged_data) <- make.unique(row.names(merged_data))
+    colnames(merged_data@data)[1] <- "Gmina"
+    
+    print(head(merged_data))
+    
+    return(merged_data)  # Add this line to return the merged data
+  })
+  
+  output$contents <- renderTable({
+    myData()
+  })
+  
+  output$mapplot <- renderLeaflet({
+    mapView(Product(),zcol = colnames(Product()@data)[ncol(Product()@data)], col.regions = jet.colors,
+            popup = popupTable(Product(), zcol = c("Gmina", colnames(Product()@data)[ncol(Product()@data)], "Unit")
+            ))@map
+  })
+}
+
+shinyApp(ui = ui, server = server)
